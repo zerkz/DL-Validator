@@ -1,0 +1,22 @@
+{
+  "name": "dl-validator",
+  "version": "1.0.0",
+  "description": "Batch verification on whether or not a DL exists on various file storage services/sites.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zerkz/DL-Validator.git"
+  },
+  "author": "Zack Whipkey",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zerkz/DL-Validator/issues"
+  },
+  "homepage": "https://github.com/zerkz/DL-Validator#readme",
+  "dependencies": {
+    "request-promise": "^2.0.1"
+  }
+}

@@ -1,6 +1,5 @@
 module.exports = {
-	name : "Box",
-
+	"name" : "Google Drive",
 	verifyDownloadExists : function (res) {
 		if (res.statusCode == 404) {
 			return false;
@@ -8,5 +7,5 @@ module.exports = {
 			return true;
 		}
 	},
-	hostNames : ["box.com", "app.box.com"]
+	hostNames : ["drive.google.com"]
 }

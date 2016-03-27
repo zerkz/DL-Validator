@@ -1,4 +1,5 @@
 var request = require('request-promise');
+var pluginValidator = require('./plugin_validator');
 var _ = require('lodash');
 var URL = require('url');
 var serviceSupportersFolderName = "service_supporters";
@@ -13,36 +14,56 @@ request = request.defaults({
 });
 
 
-function getModulesInDir(dirName) {
+function getModulesInDir(dirName, validator) {
 	var dirPath = require("path").join(__dirname, dirName);
 	var modules = {};
 	 require("fs").readdirSync(dirPath).forEach(function(file) {
+	  var module = require(dirPath + '/' + file);
+	  validator(module, function(err) {
+	  	if (err) {
+	  		console.error("error: " + err.message);
+	  	}
+	  });
 	  modules[file.substring(0, file.length - 3)] = require(dirPath + '/' + file);
 	});
 	 return modules;
 }
 
-var serviceSupporters = getModulesInDir(serviceSupportersFolderName);
-var resultHandlers = getModulesInDir(resultHandlersFolderName);
+var serviceSupporters = getModulesInDir(serviceSupportersFolderName, pluginValidator.validateServiceSupporter);
+var resultHandlers = getModulesInDir(resultHandlersFolderName, pluginValidator.validateResultHandler);
+
 
 function identifyProvider(url, serviceSupporters) {
 	var linkHostName = URL.parse(url).hostname;
+	
 	return _.find(serviceSupporters, function (serviceSupporter) {
 		return _.some(serviceSupporter.hostNames, function(hostName) {
-			return hostName == linkHostName;
+			return hostName === linkHostName;
 		});
 	});
 }
 
 function verifyDownload(url, resultHandler, attribs) {
-	var serviceSupporter = identifyProvider(url, serviceSupporters)
-	var reqOpts = serviceSupporter.reqOpts || {};
-	attribs = attribs || {} ;
-	attribs.url = url;
-	reqOpts.uri = url;
-	request(reqOpts)
-		.then(serviceSupporter.verifyDownloadExists)
-		.then(resultHandler(attribs));
+	var serviceSupporter = identifyProvider(url, serviceSupporters);
+	if (serviceSupporter) {
+		var reqOpts = getReqOpts(serviceSupporter, url);
+		attribs = attribs || {} ;
+		attribs.url = url;
+		reqOpts.uri = url;
+		request(reqOpts)
+			.then(serviceSupporter.verifyDownloadExists)
+			.then(resultHandler.handleResult(attribs));
+	} else {
+		resultHandler.handleError("No support found for file service.", attribs);
+	}
+}
+
+
+function getReqOpts(serviceSupporter, url) {
+	if (serviceSupporter.setupRequest) {
+		return serviceSupporter.getCustomRequest(url);
+	} 
+	return serviceSupporter.reqOpts || {};
 }
 
 verifyDownload("https://app.box.com/s/9op5op31jr8tvcb6b7bfeavr1npc6fbj", 

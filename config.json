@@ -1,4 +1,4 @@
 {
     //DB, Slack, etc Configuration to be put here :)
-    "slackIncomingWebHook" : ""    
+    "slackIncomingWebHook" : "aaa"    
 }

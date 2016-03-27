@@ -1,6 +1,9 @@
 #Ignore any private result handlers
 result_handlers/private-*.js
 
+#Ignore config.json changes to prevent accidental publication of secret sauces.
+config.json
+
 #test url files.
 *_test_urls.json
 

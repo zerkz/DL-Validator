@@ -1,6 +1,5 @@
 module.exports = {
 	name : "Box",
-
 	verifyDownloadExists : function (res) {
 		if (res.statusCode == 404) {
 			return false;

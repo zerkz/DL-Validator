@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/zerkz/DL-Validator#readme",
   "dependencies": {
+    "cheerio": "^0.20.0",
     "lodash": "^4.6.1",
     "parambulator": "^1.5.1",
     "request-promise": "^2.0.1"

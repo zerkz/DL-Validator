@@ -1,9 +1,9 @@
+var request = require('request-promise');
+
 function handleResult (attributes) {
 	return function (isDownloadValid) {
-		if (isDownloadValid) {
-			console.log("Download Valid. URL:" + attributes.url);
-		} else {
-			console.log("Download Invalid. URL:" + attributes.url);
+		if (!isDownloadValid) {
+			//request('')
 		}
 	 };
 }

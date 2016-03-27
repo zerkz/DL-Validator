@@ -14,10 +14,10 @@ var resultHandlerChecker = parambulator({
 });
 
 module.exports = {
-	validateServiceSupporter : function (serviceSupporter, errCallback) {
-		serviceSupporterChecker.validate(serviceSupporter, errCallback);
-	},
-	validateResultHandler : function (resultHandler, errCallback) {
-		resultHandlerChecker.validate(resultHandler, errCallback);
-	}
+  validateServiceSupporter : function (serviceSupporter, errCallback) {
+    serviceSupporterChecker.validate(serviceSupporter, errCallback);
+  },
+  validateResultHandler : function (resultHandler, errCallback) {
+    resultHandlerChecker.validate(resultHandler, errCallback);
+  }
  }

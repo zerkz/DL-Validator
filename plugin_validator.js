@@ -13,11 +13,16 @@ var resultHandlerChecker = parambulator({
   handleResult : {type$:'function'},
 });
 
+var inputProcessorChecker = parambulator({});
+
 module.exports = {
   validateServiceSupporter : function (serviceSupporter, errCallback) {
     serviceSupporterChecker.validate(serviceSupporter, errCallback);
   },
   validateResultHandler : function (resultHandler, errCallback) {
     resultHandlerChecker.validate(resultHandler, errCallback);
+  }
+  validateInputProcessor : function (inputProcessor, errCallback) {
+    inputProcessorChecker.validate(inputProcessor, errCallback);
   }
  }

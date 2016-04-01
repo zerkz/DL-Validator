@@ -6,8 +6,11 @@ var config = require('./local-config.json') || require('/config.json');
 var URL = require('url');
 const serviceSupportersFolderName = "service_supporters";
 const resultHandlersFolderName = "result_handlers";
+const inputProcessorsFolderName = "input_processors";
+let args = {};
 
-var proxies = config.proxies;
+let proxyEnabled = (config.proxy && config.proxy.enabled) || (args.proxy ? true : false) || false;
+let proxies = config.proxies || [args.proxy];
 
 //request.debug = true;
 request = request.defaults({
@@ -36,7 +39,7 @@ function getModulesInDir(dirName, validator) {
 
 var serviceSupporters = getModulesInDir(serviceSupportersFolderName, pluginValidator.validateServiceSupporter);
 var resultHandlers = getModulesInDir(resultHandlersFolderName, pluginValidator.validateResultHandler);
-
+var inputProcessors = getModulesInDir(inputProcessorsFolderName, pluginValidator.validateInputProcessor);
 
 function identifyProvider(url, serviceSupporters) {
   var linkHostName = URL.parse(url).hostname;
@@ -48,7 +51,7 @@ function identifyProvider(url, serviceSupporters) {
   });
 }
 
-function verifyDownload(url, resultHandler, attribs, proxyEnabled) {
+function verifyDownload(url, resultHandler, attribs) {
   var serviceSupporter = identifyProvider(url, serviceSupporters);
   if (serviceSupporter) {
     var reqOpts = getReqOpts(serviceSupporter, url);
@@ -66,10 +69,11 @@ function verifyDownload(url, resultHandler, attribs, proxyEnabled) {
       .then(serviceSupporter.verifyDownloadExists)
       .then(resultHandler.handleResult(attribs));
   } else {
+    console.warn('No support found for file service' + attribs.url);
     resultHandler.handleError("No support found for file service.", attribs);
   }
 }
-console.log(math);
+
 function getReqOpts(serviceSupporter, url) {
   if (serviceSupporter.setupRequest) {
     return serviceSupporter.getCustomRequest(url);
@@ -87,17 +91,27 @@ function getRandomProxy() {
   }
  }
 
-verifyDownload("https://app.box.com/s/9op5op31jr8tvcb6b7bfeavr1npc6fbj", 
-  resultHandlers.console_result_handler, {}, true);
 
-verifyDownload("https://drive.google.com/file/d/0B_TdR95roKpZN2dmS0xsb1pDVFU/view?usp=sharing", 
-  resultHandlers.console_result_handler, {}, true);
+inputProcessors.sql_dbr.getDownloadLinks(function(error, links, attribs) {
+  if (error) {
+    return console.error(error);
+  }
+  console.log('processing ' + link);
+  links.forEach(function(link)  {
+    verifyDownload(link, resultHandlers.slack_result_handler, attribs);
+  });
+});
+// verifyDownload("https://app.box.com/s/9op5op31jr8tvcb6b7bfeavr1npc6fbj", 
+//   resultHandlers.console_result_handler, {});
 
-verifyDownload("http://www.mediafire.com/download/jji8b2g6dl1lbgx", 
-  resultHandlers.console_result_handler, {}, true);
+// verifyDownload("https://drive.google.com/file/d/0B_TdR95roKpZN2dmS0xsb1pDVFU/view?usp=sharing", 
+//   resultHandlers.console_result_handler, {});
 
-verifyDownload("https://www.dropbox.com/s/ospwuey103088qv/Disturbed_Stricken_666.psarc?dl=0", 
-  resultHandlers.slack_result_handler, {}, true);
+// verifyDownload("http://www.mediafire.com/download/jji8b2g6dl1lbgx", 
+//   resultHandlers.console_result_handler, {});
+
+// verifyDownload("https://www.dropbox.com/s/ospwuey103088qv/Disturbed_Stricken_666.psarc?dl=0", 
+//   resultHandlers.slack_result_handler, {});
 
 
 

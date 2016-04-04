@@ -1,5 +1,8 @@
-var request = require('request-promise');
-var config = require('../config.json');
+'use strict';
+
+let request = require('request-promise');
+let config = require('../config.json');
+let winston = require('winston');
 
 function handleResult (attributes) {
     var slackIncomingWebHook = config.slackIncomingWebHook;
@@ -27,7 +30,29 @@ function handleResult (attributes) {
 }
 
 function handleError (err) {
-    console.error(err);
+  var slackIncomingWebHook = config.slackIncomingWebHook;
+    if (slackIncomingWebHook.length <= 0) {
+      throw "No Slack Incoming Webhook defined in config.json.";
+    }    
+    var options = {
+          method: 'POST',
+          uri: slackIncomingWebHook,
+          body: {
+              text: "Error occured: " + err
+          },
+          json: true // Automatically stringifies the body to JSON 
+    };
+    request(options).then(function(body) {
+      winston.debug("Sent error to slack");
+      winston.debug(err);
+    }).catch(function(err) {
+      winston.error('failure sending error to slack');
+      winston.error(err);
+    });   
+}
+
+function handleNoServiceSupport(hostname) {
+  return;    
 }
 
 module.exports = {

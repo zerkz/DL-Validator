@@ -12,6 +12,10 @@ function handleError (err) {
     console.error(err);
 }
 
+function handleNoServiceSupport(hostname) {
+    handleError("No service support for " + hostname);
+}
+
 module.exports = {
     handleResult : handleResult,
     handleError : handleError

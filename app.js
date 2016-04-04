@@ -1,3 +1,4 @@
+'use strict';
 var request = require('request-promise');
 var pluginValidator = require('./plugin_validator');
 var math = require('mathjs');
@@ -8,6 +9,32 @@ const serviceSupportersFolderName = "service_supporters";
 const resultHandlersFolderName = "result_handlers";
 const inputProcessorsFolderName = "input_processors";
 let args = {};
+
+let foundUnsupportedServices = [];
+
+//setup logging.
+let winston = require('winston');
+winston.setLevels(winston.config.syslog.levels);
+winston.remove(winston.transports.Console);
+winston.add(winston.transports.Console, {
+  "level" : config.console_log_level,
+  colorize : true
+})
+//100mb max error log.
+winston.add(winston.transports.File, {
+  "name" : "error",
+  "level" : "error",
+  "filename" : "error.log",
+  "maxsize" : 100000000 
+});
+
+//1mb max error log.
+winston.add(winston.transports.File, {
+  "name" : "unsupported_services",
+  "level" : "notice",
+  "filename" : "unsupported_services.log",
+  "maxsize" : 100000000 
+});
 
 let proxyEnabled = (config.proxy && config.proxy.enabled) || (args.proxy ? true : false) || false;
 let proxies = config.proxies || [args.proxy];
@@ -22,6 +49,8 @@ request = request.defaults({
 });
 
 
+
+
 function getModulesInDir(dirName, validator) {
   var dirPath = require("path").join(__dirname, dirName);
   var modules = {};
@@ -29,7 +58,7 @@ function getModulesInDir(dirName, validator) {
     var module = require(dirPath + '/' + file);
     validator(module, function(err) {
       if (err) {
-        console.error("error: " + err.message);
+        winston.error(err);
       }
     });
     modules[file.substring(0, file.length - 3)] = require(dirPath + '/' + file);
@@ -43,22 +72,23 @@ var inputProcessors = getModulesInDir(inputProcessorsFolderName, pluginValidator
 
 function identifyProvider(url, serviceSupporters) {
   var linkHostName = URL.parse(url).hostname;
-  console.log(linkHostName);
   return _.find(serviceSupporters, function (serviceSupporter) {
+    console.log(linkHostName);
+    console.log(serviceSupporter);
     return _.some(serviceSupporter.hostNames, function(hostName) {
       return hostName === linkHostName;
     });
   });
 }
 
-function verifyDownload(url, resultHandler, attribs) {
-  var serviceSupporter = identifyProvider(url, serviceSupporters);
+function verifyDownload(url, resultHandler, attribs, isLastVerification) {
+  let serviceSupporter = identifyProvider(url, serviceSupporters);
   if (serviceSupporter) {
     var reqOpts = getReqOpts(serviceSupporter, url);
     if (proxyEnabled) {
       reqOpts.proxy = getRandomProxy();
       reqOpts.tunnel = false;
-      console.log("using proxy:" + reqOpts.proxy);
+      winston.debug("using proxy:" + reqOpts.proxy);
     }
 
     attribs = attribs || {} ;
@@ -67,10 +97,23 @@ function verifyDownload(url, resultHandler, attribs) {
     reqOpts.uri = url;
     request(reqOpts)
       .then(serviceSupporter.verifyDownloadExists)
-      .then(resultHandler.handleResult(attribs));
+      .then(resultHandler.handleResult(attribs))
+      .then(function () {
+        console.log(isLastVerification);
+        if (isLastVerification) {
+          winston.notice("--Unsupported Services Summary--", foundUnsupportedServices);
+          winston.notice("=====finish run=====");
+        }
+      });
   } else {
-    console.warn('No support found for file service' + attribs.url);
-    resultHandler.handleError("No support found for file service.", attribs);
+    let unsupportedServiceHost = URL.parse(url).hostname;
+    if (!foundUnsupportedServices[unsupportedServiceHost] > 0) {
+      foundUnsupportedServices[unsupportedServiceHost] = 1;
+      winston.notice('No support found for file service: ' + attribs.url);
+      resultHandler.handleError("No support found for file service.", attribs.url);
+    } else {
+      foundUnsupportedServices[unsupportedServiceHost] = foundUnsupportedServices[unsupportedServiceHost]++;
+    }    
   }
 }
 
@@ -84,7 +127,6 @@ function getReqOpts(serviceSupporter, url) {
 function getRandomProxy() {
   if (proxies.length != 0) {
     var random = math.floor(math.random(0,proxies.length -1));
-    console.log(random)
     return proxies[random];
   } else {
     return false;
@@ -92,15 +134,26 @@ function getRandomProxy() {
  }
 
 
-inputProcessors.sql_dbr.getDownloadLinks(function(error, links, attribs) {
+function run() {
+  winston.notice("=====start run=====");
+  inputProcessors.sql_db.getDownloadLinks(function(error, dlLinkColumnName, attribs) {
   if (error) {
-    return console.error(error);
+    return winston.error(error);
   }
-  console.log('processing ' + link);
-  links.forEach(function(link)  {
-    verifyDownload(link, resultHandlers.slack_result_handler, attribs);
+  
+  for(var i = 0; i < attribs.length;i++) {
+    let result = attribs[i];
+    let link = result[dlLinkColumnName];
+    winston.debug('processing ' + link);
+    console.log(i);
+    verifyDownload(link, resultHandlers.console_result_handler, attribs, (i === (attribs.length - 1)));  
+  }    
   });
-});
+}
+
+run();
+
+
 // verifyDownload("https://app.box.com/s/9op5op31jr8tvcb6b7bfeavr1npc6fbj", 
 //   resultHandlers.console_result_handler, {});
 
@@ -112,7 +165,6 @@ inputProcessors.sql_dbr.getDownloadLinks(function(error, links, attribs) {
 
 // verifyDownload("https://www.dropbox.com/s/ospwuey103088qv/Disturbed_Stricken_666.psarc?dl=0", 
 //   resultHandlers.slack_result_handler, {});
-
 
 
 

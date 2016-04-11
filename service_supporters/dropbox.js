@@ -11,5 +11,5 @@ module.exports = {
       return true;
     }
   },
-  hostNames : ["www.dropbox.com", "dropbox.com"]
+  hostNames : ["www.dropbox.com", "dropbox.com", "dl.dropboxusercontent.com"]
 }

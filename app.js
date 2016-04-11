@@ -1,10 +1,13 @@
 'use strict';
+
+require('use-strict');
 var request = require('request-promise');
 var pluginValidator = require('./plugin_validator');
 var math = require('mathjs');
 var _ = require('lodash');
 var config = require('./local-config.json') || require('/config.json');
 var URL = require('url');
+var proxy = require('./proxy');
 const serviceSupportersFolderName = "service_supporters";
 const resultHandlersFolderName = "result_handlers";
 const inputProcessorsFolderName = "input_processors";
@@ -17,7 +20,7 @@ let winston = require('winston');
 winston.setLevels(winston.config.syslog.levels);
 winston.remove(winston.transports.Console);
 winston.add(winston.transports.Console, {
-  "level" : config.console_log_level,
+  "level" : config.console_log_level || 'warning',
   colorize : true
 })
 //100mb max error log.
@@ -36,8 +39,9 @@ winston.add(winston.transports.File, {
   "maxsize" : 100000000 
 });
 
-let proxyEnabled = (config.proxy && config.proxy.enabled) || (args.proxy ? true : false) || false;
-let proxies = config.proxies || [args.proxy];
+let proxies = proxy.getProxiesFromConfig() || [];
+
+console.log(proxies);
 
 //request.debug = true;
 request = request.defaults({
@@ -47,9 +51,6 @@ request = request.defaults({
   method : "GET",
   "User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.1 Safari/537.36"
 });
-
-
-
 
 function getModulesInDir(dirName, validator) {
   var dirPath = require("path").join(__dirname, dirName);
@@ -85,10 +86,10 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification) {
   let serviceSupporter = identifyProvider(url, serviceSupporters);
   if (serviceSupporter) {
     var reqOpts = getReqOpts(serviceSupporter, url);
-    if (proxyEnabled) {
+    if (proxies.length > 0) {
       reqOpts.proxy = getRandomProxy();
       reqOpts.tunnel = false;
-      winston.debug("using proxy:" + reqOpts.proxy);
+      winston.notice("using proxy:" + reqOpts.proxy);
     }
 
     attribs = attribs || {} ;
@@ -99,7 +100,6 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification) {
       .then(serviceSupporter.verifyDownloadExists)
       .then(resultHandler.handleResult(attribs))
       .then(function () {
-        console.log(isLastVerification);
         if (isLastVerification) {
           winston.notice("--Unsupported Services Summary--", foundUnsupportedServices);
           winston.notice("=====finish run=====");
@@ -109,7 +109,7 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification) {
     let unsupportedServiceHost = URL.parse(url).hostname;
     if (!foundUnsupportedServices[unsupportedServiceHost] > 0) {
       foundUnsupportedServices[unsupportedServiceHost] = 1;
-      winston.notice('No support found for file service: ' + attribs.url);
+      winston.log("notice", 'No support found for file service: ' + attribs.url);
       resultHandler.handleError("No support found for file service.", attribs.url);
     } else {
       foundUnsupportedServices[unsupportedServiceHost] = foundUnsupportedServices[unsupportedServiceHost]++;
@@ -145,7 +145,6 @@ function run() {
     let result = attribs[i];
     let link = result[dlLinkColumnName];
     winston.debug('processing ' + link);
-    console.log(i);
     verifyDownload(link, resultHandlers.console_result_handler, attribs, (i === (attribs.length - 1)));  
   }    
   });

@@ -13,31 +13,40 @@ const resultHandlersFolderName = "result_handlers";
 const inputProcessorsFolderName = "input_processors";
 let args = {};
 
-let foundUnsupportedServices = [];
+let foundUnsupportedServices = {};
 
 //setup logging.
 let winston = require('winston');
 winston.setLevels(winston.config.syslog.levels);
 winston.remove(winston.transports.Console);
 winston.add(winston.transports.Console, {
-  "level" : config.console_log_level || 'warning',
+  "level" : config.console_log_level || "error",
   colorize : true
-})
+});
 //100mb max error log.
 winston.add(winston.transports.File, {
   "name" : "error",
   "level" : "error",
   "filename" : "error.log",
-  "maxsize" : 100000000 
+  "maxsize" : 100000000,
+  "prettyPrint" : true,
+  "json" : true
 });
 
-//1mb max error log.
-winston.add(winston.transports.File, {
-  "name" : "unsupported_services",
+
+let unsupportedServiceLogger =  new (winston.Logger)({
   "level" : "notice",
-  "filename" : "unsupported_services.log",
-  "maxsize" : 100000000 
+  transports : [
+   new (winston.transports.File)({
+    "name" : "unsupported_services",
+    "level" : "notice",
+    "filename" : "unsupported_services.log",
+    "maxsize" : 100000000,
+    "prettyPrint" : true,
+    "json" : true
+  })]
 });
+unsupportedServiceLogger.setLevels(winston.config.syslog.levels);
 
 let proxies = proxy.getProxiesFromConfig() || [];
 
@@ -49,7 +58,11 @@ request = request.defaults({
   resolveWithFullResponse : true,
   simple : false,
   method : "GET",
-  "User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.1 Safari/537.36"
+  "User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.1 Safari/537.36",
+  timeout : 10000,
+  pool : {
+    maxSockets : 5
+  }
 });
 
 function getModulesInDir(dirName, validator) {
@@ -74,8 +87,6 @@ var inputProcessors = getModulesInDir(inputProcessorsFolderName, pluginValidator
 function identifyProvider(url, serviceSupporters) {
   var linkHostName = URL.parse(url).hostname;
   return _.find(serviceSupporters, function (serviceSupporter) {
-    console.log(linkHostName);
-    console.log(serviceSupporter);
     return _.some(serviceSupporter.hostNames, function(hostName) {
       return hostName === linkHostName;
     });
@@ -99,20 +110,22 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification) {
     request(reqOpts)
       .then(serviceSupporter.verifyDownloadExists)
       .then(resultHandler.handleResult(attribs))
-      .then(function () {
+      .then(function () {      
         if (isLastVerification) {
-          winston.notice("--Unsupported Services Summary--", foundUnsupportedServices);
-          winston.notice("=====finish run=====");
+          unsupportedServiceLogger.notice("--Unsupported Services Summary--", { unsupportedServices : foundUnsupportedServices});
+          unsupportedServiceLogger.notice("=====finish run=====");
         }
-      });
+      }).catch(function (err) {
+        winston.error(err, {url : url})
+    });;
   } else {
     let unsupportedServiceHost = URL.parse(url).hostname;
-    if (!foundUnsupportedServices[unsupportedServiceHost] > 0) {
+    if (!foundUnsupportedServices[unsupportedServiceHost]) {
       foundUnsupportedServices[unsupportedServiceHost] = 1;
-      winston.log("notice", 'No support found for file service: ' + attribs.url);
-      resultHandler.handleError("No support found for file service.", attribs.url);
+      unsupportedServiceLogger.notice('No support found for file service: ' + url);
+      resultHandler.handleError("No support found for file service.", attribs);
     } else {
-      foundUnsupportedServices[unsupportedServiceHost] = foundUnsupportedServices[unsupportedServiceHost]++;
+      foundUnsupportedServices[unsupportedServiceHost] = foundUnsupportedServices[unsupportedServiceHost] + 1;
     }    
   }
 }
@@ -135,18 +148,22 @@ function getRandomProxy() {
 
 
 function run() {
-  winston.notice("=====start run=====");
+  unsupportedServiceLogger.notice("=====start run=====");
   inputProcessors.sql_db.getDownloadLinks(function(error, dlLinkColumnName, attribs) {
-  if (error) {
-    return winston.error(error);
-  }
-  
-  for(var i = 0; i < attribs.length;i++) {
-    let result = attribs[i];
-    let link = result[dlLinkColumnName];
-    winston.debug('processing ' + link);
-    verifyDownload(link, resultHandlers.console_result_handler, attribs, (i === (attribs.length - 1)));  
-  }    
+    if (error) {
+      return winston.error(error);
+    }
+    
+    for(var i = 0; i < attribs.length;i++) {
+      let result = attribs[i];
+      let link = result[dlLinkColumnName];
+      winston.debug('processing ' + link);
+      try {
+        verifyDownload(link, resultHandlers.console_result_handler, attribs[i], (i === (attribs.length - 1)));  
+      } catch (e) {
+        winston.error(e, {url: link});
+      }
+    }
   });
 }
 

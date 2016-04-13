@@ -1,12 +1,20 @@
 'use strict';
 require('use-strict');
-var request = require('request-promise');
-var pluginValidator = require('./plugin_validator');
-var math = require('mathjs');
-var _ = require('lodash');
-var config = require('./local-config.json') || require('/config.json');
-var URL = require('url');
-var proxy = require('./proxy');
+let request = require('request-promise');
+let pluginValidator = require('./plugin_validator');
+let math = require('mathjs');
+let _ = require('lodash');
+let config = require('./local-config.json') || require('/config.json');
+let URL = require('url');
+let proxy = require('./proxy');
+let Promise = require('bluebird');
+Promise.config = {
+  warnings : true
+};
+
+function ConsumeRedirectError() {}
+ConsumeRedirectError.prototype = Object.create(Error.prototype);
+
 const serviceSupportersFolderName = "service_supporters";
 const resultHandlersFolderName = "result_handlers";
 const inputProcessorsFolderName = "input_processors";
@@ -23,6 +31,7 @@ winston.add(winston.transports.Console, {
   "level" : config.console_log_level || "error",
   colorize : true
 });
+
 //100mb max error log.
 winston.add(winston.transports.File, {
   "name" : "error",
@@ -34,7 +43,7 @@ winston.add(winston.transports.File, {
 });
 
 
-let unsupportedServiceLogger =  new (winston.Logger)({
+let unsupportedServiceLogger = new (winston.Logger)({
   "level" : "notice",
   transports : [
    new (winston.transports.File)({
@@ -91,9 +100,20 @@ function getResultHandler() {
 function identifyProvider(url, serviceSupporters) {
   var linkHostName = URL.parse(url).hostname;
   return _.find(serviceSupporters, function (serviceSupporter) {
-    return _.some(serviceSupporter.hostNames, function(hostName) {
+    let matchesHost = _.some(serviceSupporter.hostNames, function(hostName) {
       return hostName === linkHostName;
     });
+    if (!matchesHost && serviceSupporter.hostNameRegexes) {
+      _.forEach(serviceSupporter.hostNameRegexes, function (regex) {
+        let matched = (new RegExp(regex)).test(linkHostName);
+        if (matched == true) {
+          matchesHost = true;
+          //found a match, now break
+          return false;
+        }
+      });
+    }
+    return matchesHost;
   });
 }
 
@@ -101,7 +121,7 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification, retries
   let serviceSupporter = identifyProvider(url, serviceSupporters);
   if (serviceSupporter) {
     var reqOpts = getReqOpts(serviceSupporter, url);
-    if (proxies.length > 0) {
+    if (proxy && proxy.enabled && proxies.length > 0) {
       reqOpts.proxy = getRandomProxy();
       reqOpts.tunnel = false;
       winston.debug("using proxy:" + reqOpts.proxy);
@@ -110,38 +130,45 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification, retries
     attribs.proxy = reqOpts.proxy;
     attribs.url = url;
     reqOpts.uri = url;
-    request(reqOpts)
+    
+    let promise = request(reqOpts).promise()
       .then(serviceSupporter.verifyDownloadExists)
+      .then(function checkRedirectServices(resAttribs) {
+        if (resAttribs.redirectedURL) {
+          winston.debug('redirectedURL:' + resAttribs.redirectedURL);
+          verifyDownload(resAttribs.redirectedURL, resultHandler, attribs, isLastVerification, retriesLeft);
+          //TODO:add maximum redirects allowed.
+          throw new ConsumeRedirectError;
+        }
+        return resAttribs;
+      })
       .then(resultHandler.handleResult(attribs))
+      .catch(ConsumeRedirectError, function () {
+        winston.debug('following redirect from redirect service...');
+      })
       .catch(function (err) {
         if (retriesLeft <= 0) {
           winston.error(err.message, {url : url});
         } else {
-          console.log('retrying: #' + (retriesAllowed - retriesLeft) +  ":" + url);
-          verifyDownload(url, resultHandler, attribs, isLastVerification, retriesLeft);
+          winston.notice('retrying: #' + (retriesAllowed - retriesLeft) +  ":" + url);
+          verifyDownload(url, resultHandler, attribs, isLastVerification, retriesLeft - 1);
         }
       }).finally(function () {
-        if (isLastVerification) {
+        if (isLastVerification && !promise.isCancelled()) {
           unsupportedServiceLogger.notice("--Unsupported Services Summary--", { unsupportedServices : foundUnsupportedServices});
           unsupportedServiceLogger.notice("=====finish run=====");
+          unsupportedServiceLogger.notice("====================");
         }
     });
   } else {
-    let unsupportedServiceHost = URL.parse(url).hostname;
-    if (!foundUnsupportedServices[unsupportedServiceHost]) {
-      foundUnsupportedServices[unsupportedServiceHost] = 1;
-      unsupportedServiceLogger.notice('No support found for file service: ' + url);
-      resultHandler.handleError("No support found for file service.", attribs);
-    } else {
-      foundUnsupportedServices[unsupportedServiceHost] = foundUnsupportedServices[unsupportedServiceHost] + 1;
-    }    
+      addUnsupportedService(url, resultHandler);
   }
 }
 
 function getReqOpts(serviceSupporter, url) {
   if (serviceSupporter.setupRequest) {
     return serviceSupporter.getCustomRequest(url);
-  } 
+  }
   return serviceSupporter.reqOpts || {};
 }
 
@@ -154,17 +181,29 @@ function getRandomProxy() {
   }
  }
 
+ function addUnsupportedService(url, resultHandler) {
+    let unsupportedServiceHost = URL.parse(url).hostname;
+    if (!foundUnsupportedServices[unsupportedServiceHost]) {
+      foundUnsupportedServices[unsupportedServiceHost] = 1;
+      unsupportedServiceLogger.notice('No support found for file service: ' + url);
+      resultHandler.handleError("No support found for file service.", attribs);
+    } else {
+      foundUnsupportedServices[unsupportedServiceHost] = foundUnsupportedServices[unsupportedServiceHost] + 1;
+    }
+ }
 
-function run() {
+
+function run(inputProcessor) {
   unsupportedServiceLogger.notice("=====start run=====");
-  inputProcessors.sql_db.getDownloadLinks(function(error, dlLinkColumnName, attribs) {
+  unsupportedServiceLogger.notice("===================");
+
+  inputProcessor.getDownloadLinks(function(error, linkKeyName, attribs) {
     if (error) {
       return winston.error("error'd" + error.message);
     }
-    
     for(var i = 0; i < attribs.length;i++) {
       let result = attribs[i];
-      let link = result[dlLinkColumnName];
+      let link = result[linkKeyName];
       winston.debug('processing ' + link);
       try {
         let isLastVerification = (i === (attribs.length - 1));
@@ -181,7 +220,8 @@ function run() {
   });
 }
 
-run();
+run(inputProcessors.simple);
+//run(inputProcessors["sql_db"]);
 
 
 // verifyDownload("https://app.box.com/s/9op5op31jr8tvcb6b7bfeavr1npc6fbj", 

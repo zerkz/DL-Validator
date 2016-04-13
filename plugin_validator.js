@@ -3,8 +3,9 @@ var parambulator = require('parambulator');
 var serviceSupporterChecker = parambulator({ 
   'required$' : ['name', 'verifyDownloadExists', 'hostNames'],
   name : { 'type$' : 'string'},
-  verifyDownloadExists : {type$:'function'},
-  hostNames : { '*' : { 'type$' : 'string' }}
+  verifyDownloadExists : {  type$:'function'  },
+  hostNames : { '*' : { 'type$' : 'string' }},
+  hostNamesRegex : { '*' : { 'type$' : 'string' }}
 });
 
 var resultHandlerChecker = parambulator({ 

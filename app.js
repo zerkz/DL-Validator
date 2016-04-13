@@ -91,9 +91,20 @@ function getResultHandler() {
 function identifyProvider(url, serviceSupporters) {
   var linkHostName = URL.parse(url).hostname;
   return _.find(serviceSupporters, function (serviceSupporter) {
-    return _.some(serviceSupporter.hostNames, function(hostName) {
+    let matchesHost = _.some(serviceSupporter.hostNames, function(hostName) {
       return hostName === linkHostName;
     });
+    if (!matchesHost && serviceSupporter.hostNameRegexes) {
+      _.forEach(serviceSupporter.hostNameRegexes, function (regex) {
+        let matched = (new RegExp(regex)).test(linkHostName);
+        if (matched == true) {
+          matchesHost = true;
+          //found a match, now break
+          return false;
+        }
+      });
+    }
+    return matchesHost;
   });
 }
 
@@ -101,7 +112,7 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification, retries
   let serviceSupporter = identifyProvider(url, serviceSupporters);
   if (serviceSupporter) {
     var reqOpts = getReqOpts(serviceSupporter, url);
-    if (proxies.length > 0) {
+    if (proxy && proxy.enabled && proxies.length > 0) {
       reqOpts.proxy = getRandomProxy();
       reqOpts.tunnel = false;
       winston.debug("using proxy:" + reqOpts.proxy);
@@ -117,13 +128,14 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification, retries
         if (retriesLeft <= 0) {
           winston.error(err.message, {url : url});
         } else {
-          console.log('retrying: #' + (retriesAllowed - retriesLeft) +  ":" + url);
-          verifyDownload(url, resultHandler, attribs, isLastVerification, retriesLeft);
+          winston.notice('retrying: #' + (retriesAllowed - retriesLeft) +  ":" + url);
+          verifyDownload(url, resultHandler, attribs, isLastVerification, retriesLeft - 1);
         }
       }).finally(function () {
         if (isLastVerification) {
           unsupportedServiceLogger.notice("--Unsupported Services Summary--", { unsupportedServices : foundUnsupportedServices});
           unsupportedServiceLogger.notice("=====finish run=====");
+          unsupportedServiceLogger.notice("====================");
         }
     });
   } else {
@@ -141,7 +153,7 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification, retries
 function getReqOpts(serviceSupporter, url) {
   if (serviceSupporter.setupRequest) {
     return serviceSupporter.getCustomRequest(url);
-  } 
+  }
   return serviceSupporter.reqOpts || {};
 }
 
@@ -155,16 +167,17 @@ function getRandomProxy() {
  }
 
 
-function run() {
+function run(inputProcessor) {
   unsupportedServiceLogger.notice("=====start run=====");
-  inputProcessors.sql_db.getDownloadLinks(function(error, dlLinkColumnName, attribs) {
+  unsupportedServiceLogger.notice("===================");
+
+  inputProcessor.getDownloadLinks(function(error, linkKeyName, attribs) {
     if (error) {
       return winston.error("error'd" + error.message);
     }
-    
     for(var i = 0; i < attribs.length;i++) {
       let result = attribs[i];
-      let link = result[dlLinkColumnName];
+      let link = result[linkKeyName];
       winston.debug('processing ' + link);
       try {
         let isLastVerification = (i === (attribs.length - 1));
@@ -181,7 +194,8 @@ function run() {
   });
 }
 
-run();
+run(inputProcessors.simple);
+//run(inputProcessors["sql_db"]);
 
 
 // verifyDownload("https://app.box.com/s/9op5op31jr8tvcb6b7bfeavr1npc6fbj", 

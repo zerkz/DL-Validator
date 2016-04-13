@@ -3,13 +3,16 @@
 let request = require('request-promise');
 let config = require('../config.json');
 let winston = require('winston');
+let _ = require('lodash');
 
 function handleResult (attributes) {
     var slackIncomingWebHook = config.slackIncomingWebHook;
     if (slackIncomingWebHook.length <= 0) {
       throw "No Slack Incoming Webhook defined in config.json.";
     }
-    return function (isDownloadValid) {
+    return function (isDownloadValid, resAttributes) {
+      //merge attributes with attribs from the response.
+        _.merge(attributes, resAttributes);
         if (!isDownloadValid) {
           var options = {
                 method: 'POST',
@@ -20,10 +23,10 @@ function handleResult (attributes) {
                 json: true // Automatically stringifies the body to JSON 
             };
             request(options).then(function(body) {
-              console.log('sent to slack!');
+              winston.debug('sent to slack!');
             }).catch(function(err) {
-              console.error('failure sending to slack');
-              console.error(err);
+              winston.error('failure sending to slack');
+              winston.error(err);
             })
         }
      };
@@ -57,5 +60,6 @@ function handleNoServiceSupport(hostname) {
 
 module.exports = {
     handleResult : handleResult,
-    handleError : handleError
+    handleError : handleError,
+    handleNoServiceSupport : handleNoServiceSupport
 }

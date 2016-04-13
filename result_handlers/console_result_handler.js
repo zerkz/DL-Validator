@@ -1,9 +1,15 @@
+let config = require('../config.json');
+let winston = require('winston');
+let _ = require('lodash');
+
 function handleResult (attributes) {
-    return function (isDownloadValid) {
-        if (isDownloadValid) {
-            console.log("Download Valid. URL:" + attributes.url);
+    return function (resAttributes) {
+        _.merge(attributes, resAttributes);
+        if (attributes.valid) {
+            winston.info("Download Valid. URL:" + attributes.url);
         } else {
-            console.log("Download Link Invalid. URL:" + attributes.url);
+            winston.notice("Download Link Invalid. URL:" + attributes.url);
+            winston.notice("Reason:" + attributes.reason);
         }
      };
 }
@@ -18,5 +24,6 @@ function handleNoServiceSupport(hostname) {
 
 module.exports = {
     handleResult : handleResult,
-    handleError : handleError
+    handleError : handleError,
+    handleNoServiceSupport : handleNoServiceSupport
 }

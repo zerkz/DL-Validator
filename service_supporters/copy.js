@@ -1,6 +1,5 @@
 let util = require('../util.js');
 
-
 //TODO: This could be thrown into direct_file.js
 module.exports = {
   name : "Copy.com",

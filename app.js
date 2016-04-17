@@ -192,7 +192,6 @@ function getRandomProxy() {
     }
  }
 
-
 function run(inputProcessor) {
   unsupportedServiceLogger.notice("=====start run=====");
   unsupportedServiceLogger.notice("===================");

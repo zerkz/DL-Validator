@@ -94,7 +94,7 @@ var inputProcessors = getModulesInDir(inputProcessorsFolderName, pluginValidator
 let chosenResultHandler = getResultHandler();
 
 function getResultHandler() {
-  return resultHandlers.console_result_handler;
+  return resultHandlers.slack_result_handler;
 }
 
 function identifyProvider(url, serviceSupporters) {
@@ -130,12 +130,13 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification, retries
     attribs.proxy = reqOpts.proxy;
     attribs.url = url;
     reqOpts.uri = url;
-    
     let promise = request(reqOpts).promise()
       .then(serviceSupporter.verifyDownloadExists)
       .then(function checkRedirectServices(resAttribs) {
         if (resAttribs.redirectedURL) {
           winston.debug('redirectedURL:' + resAttribs.redirectedURL);
+          //we've been redirected atleast once, set the flag.
+          attribs.redirected = true;
           verifyDownload(resAttribs.redirectedURL, resultHandler, attribs, isLastVerification, retriesLeft);
           //TODO:add maximum redirects allowed.
           throw new ConsumeRedirectError;
@@ -144,24 +145,24 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification, retries
       })
       .then(resultHandler.handleResult(attribs))
       .catch(ConsumeRedirectError, function () {
-        winston.debug('following redirect from redirect service...');
+        winston.info('following redirect from redirect service...');
       })
       .catch(function (err) {
         if (retriesLeft <= 0) {
-          winston.error(err.message, {url : url});
+          winston.error(err, {url : url});
         } else {
           winston.notice('retrying: #' + (retriesAllowed - retriesLeft) +  ":" + url);
           verifyDownload(url, resultHandler, attribs, isLastVerification, retriesLeft - 1);
         }
       }).finally(function () {
-        if (isLastVerification && !promise.isCancelled()) {
+        if (isLastVerification) {
           unsupportedServiceLogger.notice("--Unsupported Services Summary--", { unsupportedServices : foundUnsupportedServices});
           unsupportedServiceLogger.notice("=====finish run=====");
           unsupportedServiceLogger.notice("====================");
         }
     });
   } else {
-      addUnsupportedService(url, resultHandler);
+      addUnsupportedService(url, resultHandler, attribs);
   }
 }
 
@@ -181,7 +182,7 @@ function getRandomProxy() {
   }
  }
 
- function addUnsupportedService(url, resultHandler) {
+ function addUnsupportedService(url, resultHandler, attribs) {
     let unsupportedServiceHost = URL.parse(url).hostname;
     if (!foundUnsupportedServices[unsupportedServiceHost]) {
       foundUnsupportedServices[unsupportedServiceHost] = 1;
@@ -219,21 +220,8 @@ function run(inputProcessor) {
   });
 }
 
-run(inputProcessors.simple);
-//run(inputProcessors["sql_db"]);
-
-
-// verifyDownload("https://app.box.com/s/9op5op31jr8tvcb6b7bfeavr1npc6fbj", 
-//   resultHandlers.console_result_handler, {});
-
-// verifyDownload("https://drive.google.com/file/d/0B_TdR95roKpZN2dmS0xsb1pDVFU/view?usp=sharing", 
-//   resultHandlers.console_result_handler, {});
-
-// verifyDownload("http://www.mediafire.com/download/jji8b2g6dl1lbgx", 
-//   resultHandlers.console_result_handler, {});
-
-// verifyDownload("https://www.dropbox.com/s/ospwuey103088qv/Disturbed_Stricken_666.psarc?dl=0", 
-//   resultHandlers.slack_result_handler, {});
+//run(inputProcessors.simple);
+run(inputProcessors["sql_db"]);
 
 
 

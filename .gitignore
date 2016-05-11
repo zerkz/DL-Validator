@@ -1,6 +1,6 @@
 #Ignore anything except readme in keys.
 keys/*
-keys/README.md
+!keys/README.md
 
 #Ignore any private result handlers
 result_handlers/private-*.js

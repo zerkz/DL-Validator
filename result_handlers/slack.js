@@ -17,6 +17,7 @@ let resultHandler = function (handlerConfig) {
 
 resultHandler.prototype.handleResult = function (attributes) {
     var slackIncomingWebHook = this.handlerConfig.IncomingWebHookURL;
+    let compiledTemplates = this.compiledTemplates;
     if (!slackIncomingWebHook) {
       throw "No Slack Incoming Webhook defined in json config.";
     }
@@ -24,12 +25,13 @@ resultHandler.prototype.handleResult = function (attributes) {
       //merge attributes with attribs from the response.
         _.merge(attributes, resAttributes);
         let isDownloadValid = attributes.valid;
-        let slackMessageFormatObj = this.compiledTemplates.invalidMessageFormat || ({ text :"Invalid Download Link. URL:{{url}}"});
+        let slackMessageFormatObj = compiledTemplates.invalidMessageFormat || ({ text :"Invalid Download Link. URL:{{url}}"});
         if (config.invalidIfRedirected && isDownloadValid && attributes.redirected) {
           isDownloadValid = false;
           attributes.redirectingHosts = attributes.redirectingHosts.join('\n');
-          slackMessageFormatObj = this.compiledTemplates.invalidMessageFormat || '{{ text : "Uses Redirect. Replace with: {{url}}"}}';
+          slackMessageFormatObj = compiledTemplates.invalidMessageFormat || '{{ text : "Uses Redirect. Replace with: {{url}}"}}';
         }
+        console.log(isDownloadValid);
         if (!isDownloadValid) {
           var options = {
                 method: 'POST',
@@ -91,11 +93,11 @@ function renderSlackPayload (templateVal, attribs) {
 function compileTemplates (templateVal) {
   if (_.isArray(templateVal)) {
     return _.flatMap(templateVal, function(val) {
-      return compileTemplates(val, attribs);
+      return compileTemplates(val);
     });
   } else if (_.isObject(templateVal)) {
       return _.mapValues(templateVal, function (val) {
-        return compileTemplates(val, attribs);
+        return compileTemplates(val);
       });
   } else if ( _.isString(templateVal)) {
    return Hogan.compile(templateVal);

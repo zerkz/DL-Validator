@@ -1,5 +1,7 @@
 'use strict';
-//require('use-strict');
+//blatant hack to load module before strict-mode enforced.
+let GoogleSpreadsheet = require('google-spreadsheet');
+require('use-strict');
 let request = require('request-promise');
 let pluginValidator = require('./plugin_validator');
 let math = require('mathjs');
@@ -77,7 +79,6 @@ function getModulesInDir(dirName, validator) {
   var modules = {};
    require("fs").readdirSync(dirPath).forEach(function(file) {
     var module = require(dirPath + '/' + file);
-    console.log(module);
     validator(module, function(err) {
       if (err) {
         winston.error("Plugin :" + file + "-- " + err);
@@ -96,13 +97,13 @@ function getResultHandlers() {
   let resultHandlerPlugins = getModulesInDir(resultHandlersFolderName, pluginValidator.validateResultHandler);
   let resultHandlerConfigs = config.resultHandlers || {};
   let resultHandlers = [];
-  resultHandlers = resultHandlerConfigs.forOwn(function (config, key) {
+  _.forOwn(resultHandlerConfigs, function (config, key) {
     config.name = key;
     if (!_.has(config, "enabled") || !_.has(config, "type")) {
       throw "Result Handler Config does not have enabled and/or type set";
     }
     if (config.enabled) {
-      resultHandlers.push(new resultHandlerPlugins(config))
+      resultHandlers.push(new resultHandlerPlugins[config.type](config));
     }
   });
   return resultHandlers;
@@ -128,7 +129,7 @@ function identifyProvider(url, serviceSupporters) {
   });
 }
 
-function verifyDownload(url, resultHandler, attribs, isLastVerification, retriesLeft) {
+function verifyDownload(url, resultHandlers, attribs, isLastVerification, retriesLeft) {
   let serviceSupporter = identifyProvider(url, serviceSupporters);
   if (serviceSupporter) {
     var reqOpts = getReqOpts(serviceSupporter, url);
@@ -152,21 +153,21 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification, retries
         //we've been redirected atleast once, set the flag.
         attribs.redirected = true;
         attribs.redirectingHosts.push(URL.parse(url).hostname);
-        verifyDownload(resAttribs.redirectedURL, resultHandler, attribs, isLastVerification, retriesLeft);
+        verifyDownload(resAttribs.redirectedURL, resultHandlers, attribs, isLastVerification, retriesLeft);
         //TODO:add maximum redirects allowed.
         throw new ConsumeRedirectError;
       }
       return resAttribs;
     });
-    _.forEach(function (resultHandlers, resultHandler) {
-      promise.then(resultHandler.handleAttrib);
+
+    _.forEach(resultHandlers, function (resultHandler) {
+      promise.then(resultHandler.handleResult(attribs));
     });
     promise.catch(ConsumeRedirectError, function () {
       winston.info('following redirect from redirect service...');
     }).catch(function (err) {
         if (retriesLeft <= 0) {
           let errorObj = {url : url};
-          console.log(reqOpts);
           if (reqOpts.proxy) {
             errorObj.proxy = reqOpts.proxy;
           }
@@ -178,9 +179,12 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification, retries
       }).finally(function () {
         if (isLastVerification) {
           //fire "end hook" if result handler requires...
-          if (resultHandler.handleLastVerification) {
-            resultHandler.handlehandleLastVerification();
-          }
+          _.forEach(resultHandlers, function (resultHandler) {
+            if (resultHandler.handleLastVerification) {
+              resultHandler.handleLastVerification();
+            }
+          });
+
           unsupportedServiceLogger.notice("--Unsupported Services Summary--", { unsupportedServices : foundUnsupportedServices});
           unsupportedServiceLogger.notice("=====finish run=====");
           unsupportedServiceLogger.notice("====================");
@@ -237,10 +241,10 @@ function run(inputProcessor) {
         let isLastVerification = (i === (attribs.length - 1));
         if (config.delay && !isNaN(config.delay)) {
           result.index = i;
-          setTimeout(verifyDownload(link, chosenResultHandler, result, isLastVerification, retriesAllowed),
+          setTimeout(verifyDownload(link, resultHandlers, result, isLastVerification, retriesAllowed),
             config.delay);
         }  else {
-          verifyDownload(link, chosenResultHandler, result, isLastVerification, retriesAllowed);
+          verifyDownload(link, resultHandlers, result, isLastVerification, retriesAllowed);
         }
       } catch (e) {
         winston.error(e.message, { url: link});

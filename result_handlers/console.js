@@ -3,14 +3,16 @@ let winston = require('winston');
 let _ = require('lodash');
 
 let resultHandler = function (handlerConfig) {
+  console.log('make console result handler');
   handlerConfig = handlerConfig || {};
   this.handlerConfig = handlerConfig;
 };
 
 resultHandler.prototype.handleResult = function(attributes) {
+  console.log('handle console')
     return function (resAttributes) {
         _.merge(attributes, resAttributes);
-        let index = attributes.index
+        let index = attributes.index;
         if (config.invalidIfRedirected && attributes.redirected) {
             winston.notice("#" + index + "  " + "Download Link Invalid. Final URL: " + attributes.url) ;
             winston.notice("#" + index + "  " + "Reason: Redirected not allowed.");

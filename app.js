@@ -1,5 +1,5 @@
 'use strict';
-require('use-strict');
+//require('use-strict');
 let request = require('request-promise');
 let pluginValidator = require('./plugin_validator');
 let math = require('mathjs');
@@ -77,9 +77,10 @@ function getModulesInDir(dirName, validator) {
   var modules = {};
    require("fs").readdirSync(dirPath).forEach(function(file) {
     var module = require(dirPath + '/' + file);
+    console.log(module);
     validator(module, function(err) {
       if (err) {
-        winston.error(err);
+        winston.error("Plugin :" + file + "-- " + err);
       }
     });
     modules[file.substring(0, file.length - 3)] = require(dirPath + '/' + file);
@@ -88,13 +89,23 @@ function getModulesInDir(dirName, validator) {
 }
 
 var serviceSupporters = getModulesInDir(serviceSupportersFolderName, pluginValidator.validateServiceSupporter);
-var resultHandlers = getModulesInDir(resultHandlersFolderName, pluginValidator.validateResultHandler);
+var resultHandlers = getResultHandlers();
 var inputProcessors = getModulesInDir(inputProcessorsFolderName, pluginValidator.validateInputProcessor);
 
-let chosenResultHandler = getResultHandler();
-
-function getResultHandler() {
-  return resultHandlers.slack_result_handler;
+function getResultHandlers() {
+  let resultHandlerPlugins = getModulesInDir(resultHandlersFolderName, pluginValidator.validateResultHandler);
+  let resultHandlerConfigs = config.resultHandlers || {};
+  let resultHandlers = [];
+  resultHandlers = resultHandlerConfigs.forOwn(function (config, key) {
+    config.name = key;
+    if (!_.has(config, "enabled") || !_.has(config, "type")) {
+      throw "Result Handler Config does not have enabled and/or type set";
+    }
+    if (config.enabled) {
+      resultHandlers.push(new resultHandlerPlugins(config))
+    }
+  });
+  return resultHandlers;
 }
 
 function identifyProvider(url, serviceSupporters) {
@@ -130,32 +141,46 @@ function verifyDownload(url, resultHandler, attribs, isLastVerification, retries
     attribs.proxy = reqOpts.proxy;
     attribs.url = url;
     reqOpts.uri = url;
+    //base attributes
+    attribs.serviceSupporter = serviceSupporter.name;
+
     let promise = request(reqOpts).promise()
-      .then(serviceSupporter.verifyDownloadExists)
-      .then(function checkRedirectServices(resAttribs) {
-        if (resAttribs.redirectedURL) {
-          winston.debug('redirectedURL:' + resAttribs.redirectedURL);
-          //we've been redirected atleast once, set the flag.
-          attribs.redirected = true;
-          verifyDownload(resAttribs.redirectedURL, resultHandler, attribs, isLastVerification, retriesLeft);
-          //TODO:add maximum redirects allowed.
-          throw new ConsumeRedirectError;
-        }
-        return resAttribs;
-      })
-      .then(resultHandler.handleResult(attribs))
-      .catch(ConsumeRedirectError, function () {
-        winston.info('following redirect from redirect service...');
-      })
-      .catch(function (err) {
+    .then(serviceSupporter.verifyDownloadExists)
+    .then(function checkRedirectServices(resAttribs) {
+      if (resAttribs.redirectedURL) {
+        winston.debug('#' + attribs.index + '  ' +  'Redirected URL:' + resAttribs.redirectedURL);
+        //we've been redirected atleast once, set the flag.
+        attribs.redirected = true;
+        attribs.redirectingHosts.push(URL.parse(url).hostname);
+        verifyDownload(resAttribs.redirectedURL, resultHandler, attribs, isLastVerification, retriesLeft);
+        //TODO:add maximum redirects allowed.
+        throw new ConsumeRedirectError;
+      }
+      return resAttribs;
+    });
+    _.forEach(function (resultHandlers, resultHandler) {
+      promise.then(resultHandler.handleAttrib);
+    });
+    promise.catch(ConsumeRedirectError, function () {
+      winston.info('following redirect from redirect service...');
+    }).catch(function (err) {
         if (retriesLeft <= 0) {
-          winston.error(err, {url : url});
+          let errorObj = {url : url};
+          console.log(reqOpts);
+          if (reqOpts.proxy) {
+            errorObj.proxy = reqOpts.proxy;
+          }
+          winston.error(err.message, errorObj);
         } else {
           winston.notice('retrying: #' + (retriesAllowed - retriesLeft) +  ":" + url);
           verifyDownload(url, resultHandler, attribs, isLastVerification, retriesLeft - 1);
         }
       }).finally(function () {
         if (isLastVerification) {
+          //fire "end hook" if result handler requires...
+          if (resultHandler.handleLastVerification) {
+            resultHandler.handlehandleLastVerification();
+          }
           unsupportedServiceLogger.notice("--Unsupported Services Summary--", { unsupportedServices : foundUnsupportedServices});
           unsupportedServiceLogger.notice("=====finish run=====");
           unsupportedServiceLogger.notice("====================");
@@ -187,7 +212,9 @@ function getRandomProxy() {
     if (!foundUnsupportedServices[unsupportedServiceHost]) {
       foundUnsupportedServices[unsupportedServiceHost] = 1;
       unsupportedServiceLogger.notice('No support found for file service: ' + url);
-      resultHandler.handleError("No support found for file service.", attribs);
+      if (resultHandler.handleNoServiceSupport) {
+        resultHandler.handleNoServiceSupport("No support found for file service.", attribs);
+      }
     } else {
       foundUnsupportedServices[unsupportedServiceHost] = foundUnsupportedServices[unsupportedServiceHost] + 1;
     }
@@ -203,16 +230,18 @@ function run(inputProcessor) {
     }
     for(var i = 0; i < attribs.length;i++) {
       let result = attribs[i];
+      result.redirectingHosts = [];
       let link = result[linkKeyName];
-      winston.debug('processing ' + link);
+      winston.debug('#' + i + '  processing ' + link);
       try {
         let isLastVerification = (i === (attribs.length - 1));
         if (config.delay && !isNaN(config.delay)) {
-          setTimeout(verifyDownload(link, chosenResultHandler, attribs[i], isLastVerification, retriesAllowed),
+          result.index = i;
+          setTimeout(verifyDownload(link, chosenResultHandler, result, isLastVerification, retriesAllowed),
             config.delay);
         }  else {
-          verifyDownload(link, chosenResultHandler, attribs[i], isLastVerification, retriesAllowed);
-        } 
+          verifyDownload(link, chosenResultHandler, result, isLastVerification, retriesAllowed);
+        }
       } catch (e) {
         winston.error(e.message, { url: link});
       }
@@ -222,7 +251,3 @@ function run(inputProcessor) {
 
 //run(inputProcessors.simple);
 run(inputProcessors["sql_db"]);
-
-
-
-

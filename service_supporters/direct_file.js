@@ -3,7 +3,7 @@ let util = require('../util.js');
 
 //general module for direct file links. relies on HEAD request to check content disposition.
 module.exports = {
-  name : "Direct Download/File Link",
+  name : "Direct Host/Download",
   verifyDownloadExists : function (res) {
     let attributes = {
       valid : true
@@ -22,5 +22,5 @@ module.exports = {
     "method" : "HEAD"
   },
 
-  hostNames : ["dd.tt"]
+  hostNames : ["dd.tt", "dl.dropboxusercontent.com"]
 }

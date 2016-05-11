@@ -5,12 +5,16 @@ module.exports = {
     let attributes = {
       valid : true
     };
+
     if (redirect && redirect.indexOf('error.php') >= 0) {
       attributes.valid = false;
       attributes.reason = "Not Found/Expired/Error";
-    } else if (redirect && redirect.indexOf('download_repair.php')) {
+    } else if (redirect && redirect.indexOf('download_repair.php') >= 0) {
       attributes.valid = false;
-      attributes.reason = "Needs Download Repair/Redirect. Replace with redirected URL.";
+      console.log(redirect);
+      attributes.reason = "Needs Download Repair/Redirect. Visit link and replace with redirected URL.";
+    } else if (redirect) {
+      attributes.redirectedURL = redirect;
     }
     
     return attributes;

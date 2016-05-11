@@ -14,5 +14,5 @@ module.exports = {
     }
     return attributes;
   },
-  hostNames : ["www.dropbox.com", "dropbox.com", "dl.dropboxusercontent.com"]
+  hostNames : ["www.dropbox.com", "dropbox.com"]
 }

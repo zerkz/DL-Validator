@@ -1,6 +1,6 @@
 var parambulator = require('parambulator');
 
-var serviceSupporterChecker = parambulator({ 
+var serviceSupporterChecker = parambulator({
   'required$' : ['name', 'verifyDownloadExists', 'hostNames'],
   name : { 'type$' : 'string'},
   verifyDownloadExists : {  type$:'function'  },
@@ -8,11 +8,13 @@ var serviceSupporterChecker = parambulator({
   hostNamesRegex : { '*' : { 'type$' : 'string' }}
 });
 
-var resultHandlerChecker = parambulator({ 
-  'required$' : ['handleError', 'handleResult'],
-  handleError : {type$:'function'},
-  handleResult : {type$:'function'},
-  handleNoServiceSupport : {'type$' :'function'}
+var resultHandlerChecker = parambulator({
+  prototype : {
+    handleError : {type$:'function', required$ : true},
+    handleResult : {type$:'function', required$ : true},
+    handleNoServiceSupport : {'type$' :'function'},
+    handleLastVerification : { 'type$' : 'function'}
+  }
 });
 
 var inputProcessorChecker = parambulator({});

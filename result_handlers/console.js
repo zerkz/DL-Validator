@@ -3,29 +3,28 @@ let winston = require('winston');
 let _ = require('lodash');
 
 let resultHandler = function (handlerConfig) {
-  console.log('make console result handler');
   handlerConfig = handlerConfig || {};
   this.handlerConfig = handlerConfig;
 };
 
 resultHandler.prototype.handleResult = function(attributes) {
-  console.log('handle console')
     return function (resAttributes) {
         _.merge(attributes, resAttributes);
         let index = attributes.index;
+        winston.debug('#' + index + ' console result handler resolving');
         if (config.invalidIfRedirected && attributes.redirected) {
             winston.notice("#" + index + "  " + "Download Link Invalid. Final URL: " + attributes.url) ;
             winston.notice("#" + index + "  " + "Reason: Redirected not allowed.");
-        }
-
-        if (attributes.valid) {
-            winston.info("#" + index + "  " + "Download Valid. URL: " + attributes.url);
         } else {
-            winston.notice("#" + index + "  " + "Download Link Invalid. URL: " + attributes.url);
-            winston.notice("#" + index + "  " + "Reason: " + attributes.reason);
-        }
-        if (attributes.redirected) {
-            winston.notice("#" + index + "  " + "Redirects were detected.");
+          if (attributes.valid) {
+              winston.info("#" + index + "  " + "Download Valid. URL: " + attributes.url);
+              if (attributes.redirected) {
+                  winston.notice("#" + index + "  " + "Redirects were detected.");
+              }
+          } else {
+              winston.notice("#" + index + "  " + "Download Link Invalid. URL: " + attributes.url);
+              winston.notice("#" + index + "  " + "Reason: " + attributes.reason);
+          }
         }
         return attributes;
      };
@@ -36,7 +35,7 @@ resultHandler.prototype.handleError = function (err) {
 }
 
 resultHandler.prototype.handleNoServiceSupport = function (hostname) {
-    handleError("No service support for " + hostname);
+    this.handleError("No service support for " + hostname);
 }
 
 resultHandler.prototype.handleLastVerification = function () {

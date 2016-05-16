@@ -18,6 +18,7 @@ let resultHandler = function (handlerConfig) {
 resultHandler.prototype.handleResult = function (attributes) {
     var slackIncomingWebHook = this.handlerConfig.IncomingWebHookURL;
     let compiledTemplates = this.compiledTemplates;
+
     if (!slackIncomingWebHook) {
       throw "No Slack Incoming Webhook defined in json config.";
     }
@@ -25,13 +26,13 @@ resultHandler.prototype.handleResult = function (attributes) {
       //merge attributes with attribs from the response.
         _.merge(attributes, resAttributes);
         let isDownloadValid = attributes.valid;
+
         let slackMessageFormatObj = compiledTemplates.invalidMessageFormat || ({ text :"Invalid Download Link. URL:{{url}}"});
         if (config.invalidIfRedirected && isDownloadValid && attributes.redirected) {
           isDownloadValid = false;
           attributes.redirectingHosts = attributes.redirectingHosts.join('\n');
-          slackMessageFormatObj = compiledTemplates.invalidMessageFormat || '{{ text : "Uses Redirect. Replace with: {{url}}"}}';
+          slackMessageFormatObj = compiledTemplates.redirectMessageFormat || '{{ text : "Uses Redirect. Replace with: {{url}}"}}';
         }
-        console.log(isDownloadValid);
         if (!isDownloadValid) {
           var options = {
                 method: 'POST',
@@ -74,17 +75,20 @@ resultHandler.prototype.handleError = function (err) {
 
 /** Runs each value in the messageFormat object  **/
 function renderSlackPayload (templateVal, attribs) {
-  if (_.isArray(templateVal)) {
+  //check to see if it is a compiled template...
+  if ( _.has(templateVal, "r")) {
+   return templateVal.render(attribs);
+  } else if (_.isArray(templateVal)) {
     return _.flatMap(templateVal, function(val) {
       return renderSlackPayload(val, attribs);
     });
   } else if (_.isObject(templateVal)) {
-      return _.mapValues(templateVal, function (val) {
-        return renderSlackPayload(val, attribs);
-      });
-  } else if ( _.has(templateVal, "render")) {
-   return templateVal.render(attribs);
+    return _.mapValues(templateVal, function (val) {
+      return renderSlackPayload(val, attribs);
+    });
   } else {
+    console.error(Object.prototype.toString.call(templateVal));
+    console.error(templateVal);
     throw "Invalid Type in Slack Message Format.";
   }
 }

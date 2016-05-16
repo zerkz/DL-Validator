@@ -4,7 +4,6 @@ let GoogleSpreadsheet = require('google-spreadsheet');
 require('use-strict');
 let request = require('request-promise');
 let pluginValidator = require('./plugin_validator');
-let math = require('mathjs');
 let _ = require('lodash');
 let config = require('./local-config.json') || require('/config.json');
 let URL = require('url');
@@ -59,7 +58,7 @@ let unsupportedServiceLogger = new (winston.Logger)({
 });
 unsupportedServiceLogger.setLevels(winston.config.syslog.levels);
 
-let proxies = proxy.getProxiesFromConfig() || [];
+let proxies = proxy.proxies;
 
 //request.debug = true;
 request = request.defaults({
@@ -133,8 +132,8 @@ function verifyDownload(url, resultHandlers, attribs, isLastVerification, retrie
   let serviceSupporter = identifyProvider(url, serviceSupporters);
   if (serviceSupporter) {
     var reqOpts = getReqOpts(serviceSupporter, url);
-    if (proxy && proxy.enabled && proxies.length > 0) {
-      reqOpts.proxy = getRandomProxy();
+    if (proxies.enabled) {
+      reqOpts.proxy = proxy.getRandomProxy();
       reqOpts.tunnel = false;
       winston.debug("using proxy:" + reqOpts.proxy);
     }
@@ -158,23 +157,23 @@ function verifyDownload(url, resultHandlers, attribs, isLastVerification, retrie
         throw new ConsumeRedirectError;
       }
       return resAttribs;
-    });
-
-    _.forEach(resultHandlers, function (resultHandler) {
-      promise.then(resultHandler.handleResult(attribs));
-    });
-    promise.catch(ConsumeRedirectError, function () {
-      winston.info('following redirect from redirect service...');
+    }).then(function (resAttribs) {
+      return Promise.all(_.map(resultHandlers, function (resultHandler) {
+        //TODO:need to clean this up so it isn't so ugly (refactor promises with spread and combine attribs)
+        return resultHandler.handleResult(attribs)(resAttribs);
+      }));
+    }).catch(ConsumeRedirectError, function () {
+      winston.info('#' + attribs.index + ' following redirect from redirect service...');
     }).catch(function (err) {
         if (retriesLeft <= 0) {
           let errorObj = {url : url};
           if (reqOpts.proxy) {
             errorObj.proxy = reqOpts.proxy;
           }
-          winston.error(err.message, errorObj);
+          winston.error(err, errorObj);
         } else {
           winston.notice('retrying: #' + (retriesAllowed - retriesLeft) +  ":" + url);
-          verifyDownload(url, resultHandler, attribs, isLastVerification, retriesLeft - 1);
+          verifyDownload(url, resultHandlers, attribs, isLastVerification, retriesLeft - 1);
         }
       }).finally(function () {
         if (isLastVerification) {
@@ -191,7 +190,7 @@ function verifyDownload(url, resultHandlers, attribs, isLastVerification, retrie
         }
     });
   } else {
-      addUnsupportedService(url, resultHandler, attribs);
+      addUnsupportedService(url, resultHandlers, attribs);
   }
 }
 
@@ -202,23 +201,16 @@ function getReqOpts(serviceSupporter, url) {
   return serviceSupporter.reqOpts || {};
 }
 
-function getRandomProxy() {
-  if (proxies.length != 0) {
-    var random = math.floor(math.random(0,proxies.length -1));
-    return proxies[random];
-  } else {
-    return false;
-  }
- }
-
- function addUnsupportedService(url, resultHandler, attribs) {
+ function addUnsupportedService(url, resultHandlers, attribs) {
     let unsupportedServiceHost = URL.parse(url).hostname;
     if (!foundUnsupportedServices[unsupportedServiceHost]) {
       foundUnsupportedServices[unsupportedServiceHost] = 1;
       unsupportedServiceLogger.notice('No support found for file service: ' + url);
-      if (resultHandler.handleNoServiceSupport) {
-        resultHandler.handleNoServiceSupport("No support found for file service.", attribs);
-      }
+      _.forEach(resultHandlers, function (resultHandler) {
+        if (resultHandler.handleNoServiceSupport) {
+          resultHandler.handleNoServiceSupport("No support found for file service.", attribs);
+        }
+      });
     } else {
       foundUnsupportedServices[unsupportedServiceHost] = foundUnsupportedServices[unsupportedServiceHost] + 1;
     }
@@ -247,7 +239,7 @@ function run(inputProcessor) {
           verifyDownload(link, resultHandlers, result, isLastVerification, retriesAllowed);
         }
       } catch (e) {
-        winston.error(e.message, { url: link});
+        winston.error(e, { url: link});
       }
     }
   });

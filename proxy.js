@@ -1,7 +1,12 @@
 
 var config = require('./local-config.json') || require('/config.json');
 var util = require('util');
+let math = require('mathjs');
+
 function getProxiesFromConfig() {
+  if (!config.proxy) {
+    return [];
+  }
   let template = util.isObject(config.proxy.proxies) && config.proxy.proxies.template;
   if (template) {
     let min = config.proxy.proxies.min || false;
@@ -26,8 +31,19 @@ function getProxiesFromConfig() {
   }
 }
 
+let proxies = getProxiesFromConfig();
+
+function getRandomProxy() {
+  if (proxies.length != 0) {
+    var random = math.floor(math.random(0,proxies.length -1));
+    return proxies[random];
+  } else {
+    return false;
+  }
+ }
+
 module.exports = {
-
-  getProxiesFromConfig : getProxiesFromConfig
-
+  proxies : proxies,
+  enabled : config.proxy && config.proxy.enabled,
+  getRandomProxy : getRandomProxy()
 }

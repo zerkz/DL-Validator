@@ -1,6 +1,6 @@
 let URL = require('url');
 
-//general util module. 
+//general util module.
 //TODO: Abstract methods out whenever a suitable amount clutter up this module.
 
 module.exports = {

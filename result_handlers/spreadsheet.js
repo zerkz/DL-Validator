@@ -5,23 +5,25 @@ let Hogan = require('hogan.js');
 let GoogleSpreadsheet = require('google-spreadsheet');
 
 
-let headersWrittern = false;
+let headersWritten = false;
 
 let resultHandler = function (handlerConfig) {
   handlerConfig = handlerConfig || {};
   this.handlerConfig = handlerConfig;
-  this.workbook = null;
+  this.creds = require('./keys/' + handlerConfig.keyFile);
+  this.sheet = new GoogleSpreadsheet(handlerConfig.sheetId);
+  this.sheet.doc(creds);
 };
-
-
 
 resultHandler.prototype.handleResult = function (attributes) {
     return function (resAttributes) {
         _.merge(attributes, resAttributes);
-        let dataKeys = handlerConfig.dataKeysToWrite || _.keys(attributes) ;
-        if (!headersWrittern) {
-          _.forEach(dataKeys, function(key, index) {
-            sheet.push({ c : index, r: 0, v: attributes[key]})
+        let dataKeys = _.keys(attributes) ;
+        if (headersWritten) {
+          _.forEach(this.handlerConfig.headers, function (key, header) {
+            if (_.has(header, "template")) {
+              sheet.Hogan.compile(header.template).render(attributes);
+            }
           });
         } else {
           sheet.push({ c : index, r: 0, v: attributes[key]})

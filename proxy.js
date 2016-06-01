@@ -4,7 +4,7 @@ var util = require('util');
 let math = require('mathjs');
 
 function getProxiesFromConfig() {
-  if (!config.proxy) {
+  if (!config.proxy || !config.proxy.enabled) {
     return [];
   }
   let template = util.isObject(config.proxy.proxies) && config.proxy.proxies.template;
@@ -22,6 +22,7 @@ function getProxiesFromConfig() {
     }
     return proxies;
   } else if (util.isArray(config.proxy.proxies)) {
+
     return config.proxies;
   } else {
     if (config.proxyEnabled) {
@@ -45,5 +46,5 @@ function getRandomProxy() {
 module.exports = {
   proxies : proxies,
   enabled : config.proxy && config.proxy.enabled,
-  getRandomProxy : getRandomProxy()
+  getRandomProxy : getRandomProxy
 }

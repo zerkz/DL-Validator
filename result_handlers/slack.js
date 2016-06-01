@@ -3,22 +3,26 @@ let config = require('../local-config.json') || require('../config.json');
 let winston = require('winston');
 let _ = require('lodash');
 let Hogan = require('hogan.js');
+let Promise = require('bluebird');
 
 let resultHandler = function (handlerConfig) {
-  handlerConfig = handlerConfig || {};
-  this.handlerConfig = handlerConfig;
-  this.compiledTemplates = {
-    invalidMessageFormat : compileTemplates(handlerConfig.invalidMessageFormat),
-    redirectMessageFormat : compileTemplates(handlerConfig.redirectMessageFormat)
+  let setup = function () {
+    handlerConfig = handlerConfig || {};
+    this.handlerConfig = handlerConfig;
+    this.compiledTemplates = {
+      invalidMessageFormat : compileTemplates(handlerConfig.invalidMessageFormat),
+      redirectMessageFormat : compileTemplates(handlerConfig.redirectMessageFormat)
+    };
+    return Promise.resolve(this);
   };
+  return Promise.try(setup.bind(this));
 };
 
 
 
 resultHandler.prototype.handleResult = function (attributes) {
-    var slackIncomingWebHook = this.handlerConfig.IncomingWebHookURL;
+    let slackIncomingWebHook = this.handlerConfig.incomingWebHookURL;
     let compiledTemplates = this.compiledTemplates;
-
     if (!slackIncomingWebHook) {
       throw "No Slack Incoming Webhook defined in json config.";
     }
@@ -28,8 +32,7 @@ resultHandler.prototype.handleResult = function (attributes) {
         let isDownloadValid = attributes.valid;
 
         let slackMessageFormatObj = compiledTemplates.invalidMessageFormat || ({ text :"Invalid Download Link. URL:{{url}}"});
-        if (config.invalidIfRedirected && isDownloadValid && attributes.redirected) {
-          isDownloadValid = false;
+        if (config.invalidIfRedirected && attributes.redirected) {
           attributes.redirectingHosts = attributes.redirectingHosts.join('\n');
           slackMessageFormatObj = compiledTemplates.redirectMessageFormat || '{{ text : "Uses Redirect. Replace with: {{url}}"}}';
         }
@@ -46,14 +49,15 @@ resultHandler.prototype.handleResult = function (attributes) {
             }).catch(function(err) {
               winston.error('failure sending to slack');
               winston.error(err);
+              return attributes;
             })
         }
      };
 }
 
 resultHandler.prototype.handleError = function (err) {
-  let slackIncomingWebHook = this.handlerConfig.IncomingWebHookURL;
-    if (slackIncomingWebHook.length <= 0) {
+  let slackIncomingWebHook = this.handlerConfig.incomingWebHookURL;
+    if (slackIncomingWebHook && slackIncomingWebHook.length <= 0) {
       throw "No Slack Incoming Webhook defined in handlerConfig.json.";
     }
     var options = {

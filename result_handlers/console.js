@@ -1,10 +1,15 @@
 let config = require('../local-config.json') || require('../config.json');
 let winston = require('winston');
 let _ = require('lodash');
+let Promise = require('bluebird');
 
 let resultHandler = function (handlerConfig) {
-  handlerConfig = handlerConfig || {};
-  this.handlerConfig = handlerConfig;
+  let setup = function () {
+    handlerConfig = handlerConfig || {};
+    this.handlerConfig = handlerConfig;
+    return Promise.resolve(this);
+  };
+  return Promise.try(setup.bind(this));
 };
 
 resultHandler.prototype.handleResult = function(attributes) {
@@ -31,7 +36,8 @@ resultHandler.prototype.handleResult = function(attributes) {
 }
 
 resultHandler.prototype.handleError = function (err) {
-    winston.error(err);
+  //error is already logged via winston in app.js, so no need to do it here.
+  return;
 }
 
 resultHandler.prototype.handleNoServiceSupport = function (hostname) {

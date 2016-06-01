@@ -6,7 +6,7 @@
 let config = require('../local-config.json') || require('../config.json');
 let Sequelize = require("sequelize");
 let dbConfig = config.input_processors.sql_db || {};
-const sqlUrl = dbConfig.url;
+const sqlHost = dbConfig.host;
 const sqlDb = dbConfig.database;
 const sqlDialect = dbConfig.dialect;
 const sqlQuery = dbConfig.query;
@@ -17,7 +17,7 @@ const sqlPassword = dbConfig.password;
 
 function validate(dbConfig) {
     return true;
-  }
+}
 
 module.exports = {
   commandAlias : "sql_db",
@@ -25,9 +25,9 @@ module.exports = {
     validate(dbConfig);
     let options = {};
     if (sqlDialect == 'sqlite') {
-      options.storage = sqlUrl
+      options.storage = sqlHost
     } else {
-      options.host = sqlUrl;
+      options.host = sqlHost;
       options.dialect = sqlDialect;
     }
     let sequelize = new Sequelize(sqlDb, sqlUser, sqlPassword, options);
@@ -38,6 +38,6 @@ module.exports = {
     } catch (e) {
       return callback(e.message);
     }
-    
+
   }
 };

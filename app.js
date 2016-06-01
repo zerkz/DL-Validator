@@ -1,10 +1,11 @@
 'use strict';
-//blatant hack to load module before strict-mode enforced.
+//blanant pre-load hack due to lack of strict mode compatibility
 let GoogleSpreadsheet = require('google-spreadsheet');
 require('use-strict');
+let _ = require('lodash');
 let request = require('request-promise');
 let pluginValidator = require('./plugin_validator');
-let _ = require('lodash');
+
 let config = require('./local-config.json') || require('/config.json');
 let URL = require('url');
 let proxy = require('./proxy');
@@ -89,7 +90,6 @@ function getModulesInDir(dirName, validator) {
 }
 
 var serviceSupporters = getModulesInDir(serviceSupportersFolderName, pluginValidator.validateServiceSupporter);
-var resultHandlers = getResultHandlers();
 var inputProcessors = getModulesInDir(inputProcessorsFolderName, pluginValidator.validateInputProcessor);
 
 function getResultHandlers() {
@@ -102,10 +102,15 @@ function getResultHandlers() {
       throw "Result Handler Config does not have enabled and/or type set";
     }
     if (config.enabled) {
-      resultHandlers.push(new resultHandlerPlugins[config.type](config));
+      try {
+        let handler = new resultHandlerPlugins[config.type](config);
+        resultHandlers.push(handler);
+      } catch (err) {
+        winston.error(err, "Result Handler cannot be created");
+      }
     }
   });
-  return resultHandlers;
+  return Promise.all(resultHandlers);
 }
 
 function identifyProvider(url, serviceSupporters) {
@@ -132,10 +137,9 @@ function verifyDownload(url, resultHandlers, attribs, isLastVerification, retrie
   let serviceSupporter = identifyProvider(url, serviceSupporters);
   if (serviceSupporter) {
     var reqOpts = getReqOpts(serviceSupporter, url);
-    if (proxies.enabled) {
+    if (proxies) {
       reqOpts.proxy = proxy.getRandomProxy();
       reqOpts.tunnel = false;
-      winston.debug("using proxy:" + reqOpts.proxy);
     }
     attribs = attribs || {} ;
     attribs.proxy = reqOpts.proxy;
@@ -151,14 +155,26 @@ function verifyDownload(url, resultHandlers, attribs, isLastVerification, retrie
         winston.debug('#' + attribs.index + '  ' +  'Redirected URL:' + resAttribs.redirectedURL);
         //we've been redirected atleast once, set the flag.
         attribs.redirected = true;
-        attribs.redirectingHosts.push(URL.parse(url).hostname);
-        verifyDownload(resAttribs.redirectedURL, resultHandlers, attribs, isLastVerification, retriesLeft);
+        let redirectedURL = URL.parse(resAttribs.redirectedURL);
+        let redirectedHref;
+        if (!redirectedURL.hostname) {
+          let origURL = URL.parse(attribs.url);
+          redirectedHref = origURL.protocol + "//" + origURL.hostname + redirectedURL.path;
+          attribs.redirectingHosts.push(origURL.href);
+        } else {
+          redirectedHref = redirectedURL.href;
+          attribs.redirectingHosts.push(attribs.url);
+        }
+        verifyDownload(redirectedHref, resultHandlers, attribs, isLastVerification, retriesLeft);
         //TODO:add maximum redirects allowed.
         throw new ConsumeRedirectError;
       }
       return resAttribs;
     }).then(function (resAttribs) {
       return Promise.all(_.map(resultHandlers, function (resultHandler) {
+        if (attribs.redirected && config.invalidIfRedirected) {
+          resAttribs.valid = false;
+        }
         //TODO:need to clean this up so it isn't so ugly (refactor promises with spread and combine attribs)
         return resultHandler.handleResult(attribs)(resAttribs);
       }));
@@ -170,7 +186,13 @@ function verifyDownload(url, resultHandlers, attribs, isLastVerification, retrie
           if (reqOpts.proxy) {
             errorObj.proxy = reqOpts.proxy;
           }
-          winston.error(err, errorObj);
+          winston.error(err.message, err);
+          Promise.all(_.map(resultHandlers, function (resultHandler) {
+            //TODO:need to clean this up so it isn't so ugly (refactor promises with spread and combine attribs)
+            return resultHandler.handleError(err);
+          })).then(function () {
+            winston.debug('finished handling all errors via resultHandlers');
+          });
         } else {
           winston.notice('retrying: #' + (retriesAllowed - retriesLeft) +  ":" + url);
           verifyDownload(url, resultHandlers, attribs, isLastVerification, retriesLeft - 1);
@@ -219,31 +241,34 @@ function getReqOpts(serviceSupporter, url) {
 function run(inputProcessor) {
   unsupportedServiceLogger.notice("=====start run=====");
   unsupportedServiceLogger.notice("===================");
-
-  inputProcessor.getDownloadLinks(function(error, linkKeyName, attribs) {
-    if (error) {
-      return winston.error("error'd" + error.message);
-    }
-    for(var i = 0; i < attribs.length;i++) {
-      let result = attribs[i];
-      result.redirectingHosts = [];
-      let link = result[linkKeyName];
-      winston.debug('#' + i + '  processing ' + link);
-      try {
-        let isLastVerification = (i === (attribs.length - 1));
-        if (config.delay && !isNaN(config.delay)) {
-          result.index = i;
-          setTimeout(verifyDownload(link, resultHandlers, result, isLastVerification, retriesAllowed),
-            config.delay);
-        }  else {
-          verifyDownload(link, resultHandlers, result, isLastVerification, retriesAllowed);
-        }
-      } catch (e) {
-        winston.error(e, { url: link});
+  getResultHandlers().then(function (resultHandlers) {
+    inputProcessor.getDownloadLinks(function(error, linkKeyName, attribs) {
+      if (error) {
+        return winston.error("error'd" + error.message);
       }
-    }
+      for(var i = 0; i < attribs.length;i++) {
+        let result = attribs[i];
+        result.redirectingHosts = [];
+        let link = result[linkKeyName];
+        winston.debug('#' + i + '  processing ' + link);
+        try {
+          let isLastVerification = (i === (attribs.length - 1));
+          if (config.delay && !isNaN(config.delay)) {
+            result.index = i;
+            setTimeout(verifyDownload(link, resultHandlers, result, isLastVerification, retriesAllowed),
+              config.delay);
+          }  else {
+            verifyDownload(link, resultHandlers, result, isLastVerification, retriesAllowed);
+          }
+        } catch (e) {
+          winston.error(e, { url: link});
+        }
+      }
+    });
+  }).catch(function(e) {
+    winston.error(e);
   });
 }
-
+winston.debug((config.proxy && config.proxy.enabled) ? "Proxies Enabled." : "Proxies Disabled.");
 //run(inputProcessors.simple);
 run(inputProcessors["sql_db"]);

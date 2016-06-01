@@ -6,7 +6,6 @@ module.exports = {
     let attributes = {
       valid : true
     };
-
     if (!redirect || res.statusCode === 404) {
       attributes.valid = false;
       attributes.reason = "Expected redirect, found none/404.";
@@ -17,5 +16,6 @@ module.exports = {
 
     return attributes;
   },
+  //goo.gl gives the finger to some proxy servers. beware.
   hostNames : ["goo.gl", "www.goog.gl", "bit.ly", "www.bit.ly"],
 }
